@@ -81,8 +81,6 @@ def run_model_suite(
             "sign_accuracy_raw": test_metrics["sign_accuracy_raw"],
             "sign_accuracy_nonzero_pred": test_metrics["sign_accuracy_nonzero_pred"],
             "corr": test_metrics["corr"],
-            "dtw_raw_norm": test_metrics["dtw_raw_norm"],
-            "dtw_z_norm": test_metrics["dtw_z_norm"],
             "sample_size": int(test_metrics["sample_size"]),
             "coef_F_liq": np.nan,
             "coef_p": np.nan,

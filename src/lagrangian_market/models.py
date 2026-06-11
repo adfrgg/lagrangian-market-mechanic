@@ -136,8 +136,6 @@ def evaluate_predictions(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, fl
         "sign_accuracy_raw": float(np.mean(y_sign == pred_sign)),
         "sign_accuracy_nonzero_pred": sign_accuracy_nonzero,
         "corr": corr,
-        "dtw_raw_norm": _normalized_dtw_distance(y, pred),
-        "dtw_z_norm": _normalized_dtw_distance(_zscore(y), _zscore(pred)),
         "sample_size": float(len(y)),
     }
 
@@ -173,55 +171,3 @@ def coefficient_table(
             "coefficient": np.asarray(model.coef_, dtype=float),
         }
     )
-
-
-def _zscore(values: np.ndarray) -> np.ndarray:
-    std = float(np.std(values))
-    if std == 0.0:
-        return np.full_like(values, np.nan, dtype=float)
-    return (values - float(np.mean(values))) / std
-
-
-def _normalized_dtw_distance(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    window_ratio: float = 0.1,
-) -> float:
-    """Return DTW distance normalized by path length.
-
-    DTW is useful here because force predictions may have the right shape with a
-    small local timing offset. A Sakoe-Chiba band keeps the comparison local and
-    avoids treating distant, unrelated events as matches.
-    """
-    y = np.asarray(y_true, dtype=float)
-    pred = np.asarray(y_pred, dtype=float)
-    mask = np.isfinite(y) & np.isfinite(pred)
-    y = y[mask]
-    pred = pred[mask]
-    n = len(y)
-    m = len(pred)
-    if n == 0 or m == 0:
-        return np.nan
-
-    window = max(abs(n - m), int(max(n, m) * window_ratio), 1)
-    inf = float("inf")
-    cost = np.full((n + 1, m + 1), inf, dtype=float)
-    steps = np.zeros((n + 1, m + 1), dtype=int)
-    cost[0, 0] = 0.0
-
-    for i in range(1, n + 1):
-        j_start = max(1, i - window)
-        j_end = min(m, i + window) + 1
-        for j in range(j_start, j_end):
-            candidates = (
-                (cost[i - 1, j], steps[i - 1, j]),
-                (cost[i, j - 1], steps[i, j - 1]),
-                (cost[i - 1, j - 1], steps[i - 1, j - 1]),
-            )
-            prev_cost, prev_steps = min(candidates, key=lambda item: item[0])
-            cost[i, j] = abs(y[i - 1] - pred[j - 1]) + prev_cost
-            steps[i, j] = prev_steps + 1
-
-    if not np.isfinite(cost[n, m]) or steps[n, m] == 0:
-        return np.nan
-    return float(cost[n, m] / steps[n, m])
