@@ -23,14 +23,16 @@ def _make_df(n: int = 60) -> pd.DataFrame:
 def test_liquidity_force_uses_no_future_data() -> None:
     idx = 30
     base = add_mechanics_features(_make_df(), volume_window=5)
-    base = add_liquidity_force(base, profile_window=12, bins=12)
+    base = add_liquidity_force(base, profile_window=12, bins=12, profile_method="range_uniform")
     original_force = base.loc[idx, "F_liq"]
 
     changed = _make_df()
     changed.loc[idx + 1 :, "close"] = changed.loc[idx + 1 :, "close"] * 3.0
+    changed.loc[idx + 1 :, "high"] = changed.loc[idx + 1 :, "high"] * 3.0
+    changed.loc[idx + 1 :, "low"] = changed.loc[idx + 1 :, "low"] * 3.0
     changed.loc[idx + 1 :, "volume"] = changed.loc[idx + 1 :, "volume"] * 100.0
     changed = add_mechanics_features(changed, volume_window=5)
-    changed = add_liquidity_force(changed, profile_window=12, bins=12)
+    changed = add_liquidity_force(changed, profile_window=12, bins=12, profile_method="range_uniform")
     changed_force = changed.loc[idx, "F_liq"]
 
     assert np.isclose(original_force, changed_force, equal_nan=True)

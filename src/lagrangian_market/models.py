@@ -34,6 +34,31 @@ class ColumnPersistenceModel:
         return x[self.column].to_numpy(dtype=float)
 
 
+@dataclass
+class NegativePFixedModel:
+    """Artifact baseline implied by F_next_t = p_{t+1} - p_t.
+
+    If next-period momentum is approximately noise around zero, a mechanical
+    predictor for the target is simply ``-p_t``.
+    """
+
+    column: str = "p"
+
+    def predict(self, x: pd.DataFrame) -> np.ndarray:
+        return -x[self.column].to_numpy(dtype=float)
+
+
+@dataclass
+class MajoritySignModel:
+    """Baseline that always predicts the most common training target sign."""
+
+    sign: float
+    magnitude: float
+
+    def predict(self, x: pd.DataFrame) -> np.ndarray:
+        return np.full(len(x), self.sign * self.magnitude, dtype=float)
+
+
 def train_test_split_time(
     df: pd.DataFrame,
     train_ratio: float = 0.7,
@@ -79,7 +104,7 @@ def predict_model(
     feature_cols: list[str],
 ) -> np.ndarray:
     """Predict with either a linear model or a simple baseline model."""
-    if isinstance(model, (ZeroModel, ColumnPersistenceModel)):
+    if isinstance(model, (ZeroModel, ColumnPersistenceModel, NegativePFixedModel, MajoritySignModel)):
         return model.predict(df)
     return model.predict(df[feature_cols])
 
@@ -94,11 +119,22 @@ def evaluate_predictions(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, fl
 
     rmse = float(np.sqrt(mean_squared_error(y, pred)))
     corr = float(np.corrcoef(y, pred)[0, 1]) if len(y) > 1 and np.std(pred) > 0 and np.std(y) > 0 else np.nan
+    pred_sign = np.sign(pred)
+    y_sign = np.sign(y)
+    nonzero_pred_mask = pred_sign != 0
+    sign_accuracy_nonzero = (
+        float(np.mean(y_sign[nonzero_pred_mask] == pred_sign[nonzero_pred_mask]))
+        if np.any(nonzero_pred_mask)
+        else np.nan
+    )
+
     return {
         "r2": float(r2_score(y, pred)) if len(y) > 1 else np.nan,
         "mae": float(mean_absolute_error(y, pred)),
         "rmse": rmse,
-        "sign_accuracy": float(np.mean(np.sign(y) == np.sign(pred))),
+        "sign_accuracy": float(np.mean(y_sign == pred_sign)),
+        "sign_accuracy_raw": float(np.mean(y_sign == pred_sign)),
+        "sign_accuracy_nonzero_pred": sign_accuracy_nonzero,
         "corr": corr,
         "dtw_raw_norm": _normalized_dtw_distance(y, pred),
         "dtw_z_norm": _normalized_dtw_distance(_zscore(y), _zscore(pred)),
@@ -115,6 +151,8 @@ def evaluate_model(
     """Evaluate a model on chronological test data."""
     required_cols = list(dict.fromkeys(feature_cols + [target_col]))
     if isinstance(model, ColumnPersistenceModel):
+        required_cols.append(model.column)
+    if isinstance(model, NegativePFixedModel):
         required_cols.append(model.column)
     clean = test_df.dropna(subset=required_cols).copy()
     y_true = clean[target_col].to_numpy(dtype=float)

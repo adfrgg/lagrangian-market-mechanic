@@ -1,4 +1,4 @@
-# Lagrangian Market Mechanics v0.1
+# Lagrangian Market Mechanics v0.2
 
 This project is a Python research framework for testing a physics-inspired
 market-mechanics model on OHLCV data. It is not a trading bot, does not generate
@@ -83,6 +83,7 @@ python scripts/run_experiment.py ^
   --volume-window 100 ^
   --profile-window 100 ^
   --bins 50 ^
+  --profile-method range_uniform ^
   --mode barrier ^
   --train-ratio 0.7
 ```
@@ -97,7 +98,11 @@ need enough past data before they become valid.
 
 Each experiment writes:
 
-- `metrics.csv`: baseline and Lagrangian model metrics.
+- `metrics_all.csv`: full-sample baseline and Lagrangian model metrics.
+- `metrics_inside_profile.csv`: metrics for samples inside the historical profile range.
+- `metrics_outside_profile.csv`: metrics for outside-profile samples, or an insufficient-sample note.
+- `incremental_value.csv`: matched liquidity-model improvements over artifact-control baselines.
+- `coefficients.csv`: model coefficients and intercepts.
 - `feature_data.csv`: OHLCV data plus mechanics and liquidity features.
 - `reports/report.md`: short research report and interpretation notes.
 - `figures/kinetic_activity.png`: close price and kinetic activity.
@@ -106,6 +111,117 @@ Each experiment writes:
 - `figures/actual_vs_predicted.png`: test-period force prediction plot.
 - `figures/volume_profile_snapshot.png`: one rolling potential snapshot.
 - `figures/residuals.png`: residual histogram.
+- `figures/target_vs_negative_p.png`: mechanical `-p_t` baseline diagnostic.
+- `figures/fliq_vs_p_residual.png`: liquidity force versus residual after p-control.
+- `figures/force_scatter_inside_outside.png`: force scatter colored by profile-range status.
+- `figures/profile_diagnostics.png`: outside-range, entropy, and nonzero-bin diagnostics.
+
+## v0.2 Research Audit Fixes
+
+The v0.1 target was:
+
+```text
+F_next_t = F_obs_{t+1} = p_{t+1} - p_t
+```
+
+That target mechanically contains `-p_t`. Therefore a model using `u_t` or any
+variable correlated with current momentum can appear to discover damping even if
+it mostly learns target arithmetic.
+
+v0.2 adds the explicit mechanical baseline:
+
+```text
+F_next_t ~= -p_t
+```
+
+It also tests liquidity force after controlling for momentum:
+
+```text
+F_next_t = a + b F_liq_t + c p_t + epsilon_t
+```
+
+The key scientific question is now:
+
+> Does `F_liq_t` add out-of-sample information beyond the mechanical reversal
+> term implied by `F_next_t = p_{t+1} - p_t`?
+
+The v0.2 model suite includes:
+
+- `baseline_zero`
+- `baseline_negative_p_fixed`
+- `majority_sign_baseline`
+- `baseline_p_only`
+- `baseline_u_only`
+- `baseline_p_u`
+- `lagrangian_liq_only`
+- `lagrangian_liq_u`
+- `lagrangian_liq_p`
+- `lagrangian_liq_p_u`
+
+Interpretation rules:
+
+- If `lagrangian_liq_only` works but `lagrangian_liq_p` does not, liquidity
+  force may only be proxying for current momentum.
+- If `lagrangian_liq_p` or `lagrangian_liq_p_u` improves test R2 and RMSE over
+  the matched p-control baseline, that is stronger evidence that liquidity
+  potential adds information.
+- Do not claim the model works unless it improves beyond `baseline_negative_p_fixed`
+  and `baseline_p_only` out of sample.
+
+## Profile Methods
+
+v0.2 supports multiple liquidity-profile construction methods:
+
+- `close`: assigns each bar's volume to log(close).
+- `typical` / `hlc3`: assigns volume to log((high + low + close) / 3).
+- `range_uniform`: distributes volume uniformly across bins between log(low)
+  and log(high).
+- `range_triangular`: distributes volume across the bar range with higher weight
+  near close.
+
+`close` is the simplest and crudest method. `range_uniform` is a more realistic
+OHLCV approximation because intrabar volume did not all occur at the close.
+
+## Inside / Outside Profile Diagnostics
+
+The rolling profile is built from historical prices. If current `x_t` lies
+outside that historical range, the force is effectively evaluated near a
+boundary bin. v0.2 adds:
+
+```text
+profile_x_min
+profile_x_max
+outside_profile_range
+distance_to_profile_range
+profile_bin_width
+profile_num_nonzero_bins
+profile_entropy
+```
+
+If a model works inside the profile but fails outside, the potential may be more
+useful in liquidity-zone or mean-reverting regimes. If it works outside, it may
+capture breakout behavior. If both fail, the OHLCV potential proxy is weak.
+
+## Barrier vs Well
+
+The potential mode controls how historical volume is interpreted:
+
+- `barrier`: high historical volume is high potential, like resistance/barrier.
+- `well`: high historical volume is low potential, like attractor/fair-value.
+
+Run both modes with:
+
+```powershell
+python scripts/run_experiment.py --csv data/raw/btcusdt_1h.csv --output outputs/compare_modes --volume-window 100 --profile-window 100 --bins 50 --profile-method range_uniform --compare-modes
+```
+
+This writes:
+
+```text
+outputs/compare_modes/barrier/
+outputs/compare_modes/well/
+outputs/compare_modes/mode_comparison.csv
+```
 
 ## Interpretation Guide
 

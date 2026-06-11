@@ -14,6 +14,7 @@ def build_feature_set(
     profile_window: int = 500,
     bins: int = 50,
     potential_mode: str = "barrier",
+    profile_method: str = "close",
 ) -> pd.DataFrame:
     """Add mechanics and liquidity-force features to an OHLCV DataFrame."""
     out = add_mechanics_features(df, volume_window=volume_window, use_log_price=True)
@@ -23,5 +24,6 @@ def build_feature_set(
         bins=bins,
         normalize=True,
         mode=potential_mode,
+        profile_method=profile_method,
     )
     return out
