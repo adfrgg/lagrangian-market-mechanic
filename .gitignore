@@ -26,12 +26,22 @@ data/raw/*
 !data/raw/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
+data/l2_raw/*
+!data/l2_raw/.gitkeep
+data/l2_processed/*
+!data/l2_processed/.gitkeep
 outputs/*
 !outputs/.gitkeep
 !outputs/figures/
 !outputs/figures/.gitkeep
 !outputs/reports/
 !outputs/reports/.gitkeep
+!outputs/l2_runs/
+outputs/l2_runs/*
+!outputs/l2_runs/.gitkeep
+!outputs/l2_validation/
+outputs/l2_validation/*
+!outputs/l2_validation/.gitkeep
 
 # Local model artifacts
 models/*

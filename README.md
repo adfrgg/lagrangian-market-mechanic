@@ -283,3 +283,127 @@ pytest
 
 The package targets Python 3.10+ and uses pandas, numpy, scikit-learn,
 matplotlib, pytest, and optional tqdm.
+
+## Order-Book Lagrangian Market Mechanics v1.0
+
+v0.1/v0.2 used rolling OHLCV volume profiles as a proxy for liquidity potential.
+That was useful as a prototype and negative control, but it is not true
+liquidity. Historical volume says where trades happened, not how hard price is
+to move now.
+
+v1.0 adds an order-book mechanics layer. The new hypothesis uses current book
+depth as inertia and potential, and aggressive trade flow as an external force.
+
+This is still not a trading strategy. There are no buy/sell signals, no profit
+optimization, and no trading-return reports.
+
+Physics-to-market dictionary:
+
+| Physics | Market |
+|---|---|
+| position `x` | log mid-price |
+| velocity `dx` | log mid-price change |
+| mass / inertia `M` | local book depth or price-impact stiffness |
+| momentum `p` | `M * dx` |
+| kinetic activity `K` | `0.5 * M * dx^2` |
+| potential `U` | cost to move through the order book |
+| external force | aggressive trade flow / OFI proxy |
+| friction | spread and impact |
+| noise | random flow and news |
+
+Core equations:
+
+```text
+best_bid_t = highest bid
+best_ask_t = lowest ask
+mid_t = (best_bid_t + best_ask_t) / 2
+x_t = log(mid_t)
+u_t = x_t - x_{t-1}
+M_t = normalized local depth or impact stiffness
+p_t = M_t u_t
+K_t = 0.5 M_t u_t^2
+F_obs_t = p_t - p_{t-1}
+F_next_t = F_obs_{t+1}
+```
+
+Directional order-book potential:
+
+```text
+U_up_t(H) = cost to move upward by H bps through asks
+U_down_t(H) = cost to move downward by H bps through bids
+F_pot_t = log(U_down_t + eps) - log(U_up_t + eps)
+```
+
+Aggressive trade-flow force:
+
+```text
+F_flow_t = (taker_buy_quote - taker_sell_quote) / rolling_mean(total_trade_quote)
+```
+
+Empirical model:
+
+```text
+F_next_t =
+  a
+  + b1 F_pot_t
+  + b2 F_flow_t
+  + b3 book_imbalance_t
+  + b4 p_t
+  + b5 u_t
+  + epsilon_t
+```
+
+Because `F_next_t = p_{t+1} - p_t` mechanically contains `-p_t`, every L2 model
+is compared against `baseline_negative_p_fixed`, `baseline_p_only`, and
+`baseline_p_u`.
+
+### L2 Data Collection
+
+Quick live collection, build, and experiment in one PowerShell line:
+
+```powershell
+python scripts/collect_binance_l2.py --symbols ETHUSDT --duration-minutes 15 --mode partial --depth-levels 20 --speed 100ms --output data/l2_raw/quick_eth; python scripts/build_l2_dataset.py --input data/l2_raw/quick_eth --symbol ETHUSDT --bar-size 5s --output data/l2_processed/ETHUSDT_5s_quick.parquet; python scripts/run_l2_experiment.py --data data/l2_processed/ETHUSDT_5s_quick.parquet --output outputs/l2_runs/ETHUSDT_5s_quick --folds 5
+```
+
+Fuller collection:
+
+```powershell
+python scripts/collect_binance_l2.py --symbols BTCUSDT ETHUSDT SOLUSDT BNBUSDT --duration-minutes 360 --mode partial --depth-levels 20 --speed 100ms --output data/l2_raw/l2_6h
+```
+
+Build a processed dataset:
+
+```powershell
+python scripts/build_l2_dataset.py --input data/l2_raw/l2_6h --symbol ETHUSDT --bar-size 5s --depth-levels 20 --horizon-bps 1 2 5 10 --mass-window 300 --output data/l2_processed/ETHUSDT_5s.parquet
+```
+
+Run one L2 experiment:
+
+```powershell
+python scripts/run_l2_experiment.py --data data/l2_processed/ETHUSDT_5s.parquet --output outputs/l2_runs/ETHUSDT_5s --train-ratio 0.7 --folds 5
+```
+
+Run validation across processed files:
+
+```powershell
+python scripts/run_l2_validation.py --processed-dir data/l2_processed --symbols BTCUSDT ETHUSDT SOLUSDT --bar-sizes 1s 5s 15s 60s --output outputs/l2_validation
+```
+
+First files to inspect:
+
+- `outputs/l2_runs/<run>/incremental_value.csv`
+- `outputs/l2_runs/<run>/metrics_all.csv`
+- `outputs/l2_runs/<run>/fold_summary.csv`
+- `outputs/l2_runs/<run>/report.md`
+- `outputs/l2_runs/<run>/plots/residual_added_value.png`
+
+The primary question is whether `F_pot` adds value beyond `p` and `u`. The
+secondary question is whether `F_flow` adds value.
+
+Known limitations:
+
+- Partial depth streams are top-of-book snapshots, not full historical L3 data.
+- Free Binance public data only exists from the moment collection starts.
+- Parquet output falls back to CSV if no parquet engine is installed.
+- Robust validation requires hours to days of data, multiple symbols, and
+  chronological folds.
